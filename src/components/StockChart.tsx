@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries } from "lightweight-charts";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries, LineSeries } from "lightweight-charts";
 import { fetchChartData } from "@/lib/api";
+import { parsePineScript, calculateIndicator, OHLCData } from "@/lib/pinescript";
+import IndicatorPanel from "@/components/IndicatorPanel";
 
 interface StockChartProps {
   symbol: string;
@@ -8,11 +10,10 @@ interface StockChartProps {
 
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "D", "W", "M"];
 
-// Generate realistic demo OHLCV data
 function generateDemoData(symbol: string, count = 200): CandlestickData<Time>[] {
   const data: CandlestickData<Time>[] = [];
   const basePrices: Record<string, number> = {
-    BBCA: 9800, BBRI: 4600, TLKM: 3400, ASII: 5200, BMRI: 6300,
+    BBCA: 7200, BBRI: 4600, TLKM: 3400, ASII: 5200, BMRI: 6300,
     UNVR: 3150, GOTO: 72, BREN: 6900, ADRO: 2700, ANTM: 1530,
     PGAS: 1350, INDF: 6700,
   };
@@ -37,9 +38,13 @@ export default function StockChart({ symbol }: StockChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const indicatorSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const [timeframe, setTimeframe] = useState("D");
   const [loading, setLoading] = useState(false);
   const [usingDemo, setUsingDemo] = useState(false);
+  const [scripts, setScripts] = useState<string[]>([]);
+  const [activeIndicatorNames, setActiveIndicatorNames] = useState<string[]>([]);
+  const candlesRef = useRef<OHLCData[]>([]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -96,12 +101,64 @@ export default function StockChart({ symbol }: StockChartProps) {
     return () => {
       observer.disconnect();
       chart.remove();
+      chartInstance.current = null;
     };
   }, []);
 
   useEffect(() => {
     loadData();
   }, [symbol, timeframe]);
+
+  // Re-apply indicators when scripts change
+  useEffect(() => {
+    applyIndicators();
+  }, [scripts]);
+
+  const removeIndicatorSeries = useCallback(() => {
+    if (!chartInstance.current) return;
+    for (const s of indicatorSeriesRef.current) {
+      try {
+        chartInstance.current.removeSeries(s);
+      } catch {}
+    }
+    indicatorSeriesRef.current = [];
+  }, []);
+
+  const applyIndicators = useCallback(() => {
+    if (!chartInstance.current || candlesRef.current.length === 0) return;
+
+    removeIndicatorSeries();
+
+    const allNames: string[] = [];
+    let colorIdx = 0;
+
+    for (const script of scripts) {
+      const parsed = parsePineScript(script);
+      for (const ind of parsed) {
+        const result = calculateIndicator(ind, candlesRef.current, colorIdx);
+        if (!result) continue;
+        allNames.push(result.name);
+
+        for (const line of result.lines) {
+          const lineSeries = chartInstance.current!.addSeries(LineSeries, {
+            color: line.color,
+            lineWidth: (line.lineWidth || 2) as any,
+            lineStyle: line.lineStyle,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            title: line.label,
+          });
+          lineSeries.setData(
+            line.data.map((d) => ({ time: d.time as Time, value: d.value }))
+          );
+          indicatorSeriesRef.current.push(lineSeries);
+        }
+        colorIdx++;
+      }
+    }
+
+    setActiveIndicatorNames(allNames);
+  }, [scripts, removeIndicatorSeries]);
 
   async function loadData() {
     if (!seriesRef.current) return;
@@ -111,27 +168,49 @@ export default function StockChart({ symbol }: StockChartProps) {
     try {
       const result = await fetchChartData(symbol, timeframe);
 
-      // Try to parse API response
-      if (result && Array.isArray(result) && result.length > 0 && result[0].open !== undefined) {
-        const candles: CandlestickData<Time>[] = result.map((item: any) => ({
-          time: (typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time || item.date || item.timestamp).getTime() / 1000)) as Time,
+      if (result?.success && result.data && Array.isArray(result.data)) {
+        const candles: CandlestickData<Time>[] = result.data
+          .sort((a: any, b: any) => a.time - b.time)
+          .map((item: any) => ({
+            time: item.time as Time,
+            open: Number(item.open),
+            high: Number(item.high),
+            low: Number(item.low),
+            close: Number(item.close),
+          }));
+        
+        candlesRef.current = result.data.sort((a: any, b: any) => a.time - b.time).map((item: any) => ({
+          time: item.time,
+          open: Number(item.open),
+          high: Number(item.high),
+          low: Number(item.low),
+          close: Number(item.close),
+          volume: Number(item.volume || 0),
+        }));
+
+        seriesRef.current.setData(candles);
+        chartInstance.current?.timeScale().fitContent();
+        applyIndicators();
+      } else if (result && Array.isArray(result) && result.length > 0) {
+        const sorted = result.sort((a: any, b: any) => (a.time || 0) - (b.time || 0));
+        const candles: CandlestickData<Time>[] = sorted.map((item: any) => ({
+          time: (typeof item.time === "number" ? item.time : Math.floor(new Date(item.time || item.date).getTime() / 1000)) as Time,
           open: Number(item.open),
           high: Number(item.high),
           low: Number(item.low),
           close: Number(item.close),
         }));
-        seriesRef.current.setData(candles);
-        chartInstance.current?.timeScale().fitContent();
-      } else if (result && result.data && Array.isArray(result.data)) {
-        const candles: CandlestickData<Time>[] = result.data.map((item: any) => ({
-          time: (typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time || item.date || item.timestamp).getTime() / 1000)) as Time,
-          open: Number(item.open || item.o),
-          high: Number(item.high || item.h),
-          low: Number(item.low || item.l),
-          close: Number(item.close || item.c),
+        candlesRef.current = sorted.map((item: any) => ({
+          time: typeof item.time === "number" ? item.time : Math.floor(new Date(item.time || item.date).getTime() / 1000),
+          open: Number(item.open),
+          high: Number(item.high),
+          low: Number(item.low),
+          close: Number(item.close),
+          volume: Number(item.volume || 0),
         }));
         seriesRef.current.setData(candles);
         chartInstance.current?.timeScale().fitContent();
+        applyIndicators();
       } else {
         throw new Error("Unexpected data format");
       }
@@ -139,12 +218,28 @@ export default function StockChart({ symbol }: StockChartProps) {
       console.warn("Using demo data for", symbol, err);
       setUsingDemo(true);
       const demoData = generateDemoData(symbol);
+      candlesRef.current = demoData.map((d) => ({
+        time: d.time as number,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }));
       seriesRef.current.setData(demoData);
       chartInstance.current?.timeScale().fitContent();
+      applyIndicators();
     } finally {
       setLoading(false);
     }
   }
+
+  const handleAddScript = (script: string) => {
+    setScripts((prev) => [...prev, script]);
+  };
+
+  const handleRemoveScript = (index: number) => {
+    setScripts((prev) => prev.filter((_, i) => i !== index));
+  };
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -172,6 +267,12 @@ export default function StockChart({ symbol }: StockChartProps) {
           <span className="ml-2 text-xs text-warning">Demo data</span>
         )}
       </div>
+      <IndicatorPanel
+        scripts={scripts}
+        onAddScript={handleAddScript}
+        onRemoveScript={handleRemoveScript}
+        activeIndicators={activeIndicatorNames}
+      />
       <div ref={chartRef} className="flex-1" />
     </div>
   );

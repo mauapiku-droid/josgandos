@@ -1,27 +1,87 @@
-import { useState } from "react";
-import { Star, Search } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Star, Search, Loader2 } from "lucide-react";
+import { searchSymbol, fetchConstituents } from "@/lib/api";
 
 interface Stock {
   symbol: string;
   name: string;
-  price: number;
-  change: number;
-  changePercent: number;
+  exchange: string;
+  type: string;
 }
 
-const DEFAULT_WATCHLIST: Stock[] = [
-  { symbol: "BBCA", name: "Bank Central Asia", price: 9875, change: 75, changePercent: 0.77 },
-  { symbol: "BBRI", name: "Bank Rakyat Indo", price: 4650, change: -30, changePercent: -0.64 },
-  { symbol: "TLKM", name: "Telkom Indonesia", price: 3420, change: 28, changePercent: 0.59 },
-  { symbol: "ASII", name: "Astra International", price: 5225, change: -50, changePercent: -0.95 },
-  { symbol: "BMRI", name: "Bank Mandiri", price: 6350, change: 100, changePercent: 1.60 },
-  { symbol: "UNVR", name: "Unilever Indonesia", price: 3180, change: -15, changePercent: -0.47 },
-  { symbol: "GOTO", name: "GoTo Gojek Tokped", price: 74, change: 2, changePercent: 2.78 },
-  { symbol: "BREN", name: "Barito Renewables", price: 6975, change: 125, changePercent: 1.82 },
-  { symbol: "ADRO", name: "Adaro Energy", price: 2700, change: -20, changePercent: -0.74 },
-  { symbol: "ANTM", name: "Aneka Tambang", price: 1545, change: 15, changePercent: 0.98 },
-  { symbol: "PGAS", name: "Perusahaan Gas", price: 1360, change: 5, changePercent: 0.37 },
-  { symbol: "INDF", name: "Indofood Sukses", price: 6700, change: -25, changePercent: -0.37 },
+// Comprehensive list of popular IDX stocks as fallback
+const IDX_STOCKS: Stock[] = [
+  { symbol: "BBCA", name: "Bank Central Asia", exchange: "IDX", type: "stock" },
+  { symbol: "BBRI", name: "Bank Rakyat Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "BMRI", name: "Bank Mandiri", exchange: "IDX", type: "stock" },
+  { symbol: "BBNI", name: "Bank Negara Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "TLKM", name: "Telkom Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "ASII", name: "Astra International", exchange: "IDX", type: "stock" },
+  { symbol: "UNVR", name: "Unilever Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "HMSP", name: "HM Sampoerna", exchange: "IDX", type: "stock" },
+  { symbol: "GGRM", name: "Gudang Garam", exchange: "IDX", type: "stock" },
+  { symbol: "ICBP", name: "Indofood CBP", exchange: "IDX", type: "stock" },
+  { symbol: "INDF", name: "Indofood Sukses Makmur", exchange: "IDX", type: "stock" },
+  { symbol: "KLBF", name: "Kalbe Farma", exchange: "IDX", type: "stock" },
+  { symbol: "PGAS", name: "Perusahaan Gas Negara", exchange: "IDX", type: "stock" },
+  { symbol: "PTBA", name: "Bukit Asam", exchange: "IDX", type: "stock" },
+  { symbol: "SMGR", name: "Semen Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "ADRO", name: "Adaro Energy", exchange: "IDX", type: "stock" },
+  { symbol: "ANTM", name: "Aneka Tambang", exchange: "IDX", type: "stock" },
+  { symbol: "BREN", name: "Barito Renewables", exchange: "IDX", type: "stock" },
+  { symbol: "GOTO", name: "GoTo Gojek Tokopedia", exchange: "IDX", type: "stock" },
+  { symbol: "BRIS", name: "Bank Syariah Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "ARTO", name: "Bank Jago", exchange: "IDX", type: "stock" },
+  { symbol: "EMTK", name: "Elang Mahkota Teknologi", exchange: "IDX", type: "stock" },
+  { symbol: "MDKA", name: "Merdeka Copper Gold", exchange: "IDX", type: "stock" },
+  { symbol: "CPIN", name: "Charoen Pokphand Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "MNCN", name: "Media Nusantara Citra", exchange: "IDX", type: "stock" },
+  { symbol: "JPFA", name: "Japfa Comfeed Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "INKP", name: "Indah Kiat Pulp & Paper", exchange: "IDX", type: "stock" },
+  { symbol: "TKIM", name: "Pabrik Kertas Tjiwi Kimia", exchange: "IDX", type: "stock" },
+  { symbol: "ITMG", name: "Indo Tambangraya Megah", exchange: "IDX", type: "stock" },
+  { symbol: "MEDC", name: "Medco Energi Internasional", exchange: "IDX", type: "stock" },
+  { symbol: "INCO", name: "Vale Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "ESSA", name: "Surya Esa Perkasa", exchange: "IDX", type: "stock" },
+  { symbol: "BRPT", name: "Barito Pacific", exchange: "IDX", type: "stock" },
+  { symbol: "TBIG", name: "Tower Bersama Infrastructure", exchange: "IDX", type: "stock" },
+  { symbol: "TOWR", name: "Sarana Menara Nusantara", exchange: "IDX", type: "stock" },
+  { symbol: "EXCL", name: "XL Axiata", exchange: "IDX", type: "stock" },
+  { symbol: "ISAT", name: "Indosat Ooredoo Hutchison", exchange: "IDX", type: "stock" },
+  { symbol: "JSMR", name: "Jasa Marga", exchange: "IDX", type: "stock" },
+  { symbol: "WIKA", name: "Wijaya Karya", exchange: "IDX", type: "stock" },
+  { symbol: "WSKT", name: "Waskita Karya", exchange: "IDX", type: "stock" },
+  { symbol: "PTPP", name: "PP (Persero)", exchange: "IDX", type: "stock" },
+  { symbol: "BSDE", name: "Bumi Serpong Damai", exchange: "IDX", type: "stock" },
+  { symbol: "CTRA", name: "Ciputra Development", exchange: "IDX", type: "stock" },
+  { symbol: "SMRA", name: "Summarecon Agung", exchange: "IDX", type: "stock" },
+  { symbol: "PWON", name: "Pakuwon Jati", exchange: "IDX", type: "stock" },
+  { symbol: "ERAA", name: "Erajaya Swasembada", exchange: "IDX", type: "stock" },
+  { symbol: "ACES", name: "Ace Hardware Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "MAPI", name: "Mitra Adiperkasa", exchange: "IDX", type: "stock" },
+  { symbol: "LPPF", name: "Matahari Department Store", exchange: "IDX", type: "stock" },
+  { symbol: "SIDO", name: "Industri Jamu Sido Muncul", exchange: "IDX", type: "stock" },
+  { symbol: "MYOR", name: "Mayora Indah", exchange: "IDX", type: "stock" },
+  { symbol: "UNTR", name: "United Tractors", exchange: "IDX", type: "stock" },
+  { symbol: "AALI", name: "Astra Agro Lestari", exchange: "IDX", type: "stock" },
+  { symbol: "LSIP", name: "PP London Sumatra Indonesia", exchange: "IDX", type: "stock" },
+  { symbol: "SCMA", name: "Surya Citra Media", exchange: "IDX", type: "stock" },
+  { symbol: "AKRA", name: "AKR Corporindo", exchange: "IDX", type: "stock" },
+  { symbol: "BNLI", name: "Bank Permata", exchange: "IDX", type: "stock" },
+  { symbol: "MEGA", name: "Bank Mega", exchange: "IDX", type: "stock" },
+  { symbol: "NISP", name: "Bank OCBC NISP", exchange: "IDX", type: "stock" },
+  { symbol: "BDMN", name: "Bank Danamon", exchange: "IDX", type: "stock" },
+  { symbol: "BTPS", name: "Bank BTPN Syariah", exchange: "IDX", type: "stock" },
+  { symbol: "BJTM", name: "Bank Jatim", exchange: "IDX", type: "stock" },
+  { symbol: "BJBR", name: "Bank BJB", exchange: "IDX", type: "stock" },
+  { symbol: "AMMN", name: "Amman Mineral Internasional", exchange: "IDX", type: "stock" },
+  { symbol: "TPIA", name: "Chandra Asri Pacific", exchange: "IDX", type: "stock" },
+  { symbol: "PGEO", name: "Pertamina Geothermal Energy", exchange: "IDX", type: "stock" },
+  { symbol: "MBMA", name: "Merdeka Battery Materials", exchange: "IDX", type: "stock" },
+  { symbol: "HRUM", name: "Harum Energy", exchange: "IDX", type: "stock" },
+  { symbol: "BUKA", name: "Bukalapak.com", exchange: "IDX", type: "stock" },
+  { symbol: "HEAL", name: "Medikaloka Hermina", exchange: "IDX", type: "stock" },
+  { symbol: "MTEL", name: "Dayamitra Telekomunikasi", exchange: "IDX", type: "stock" },
 ];
 
 interface WatchlistProps {
@@ -31,13 +91,61 @@ interface WatchlistProps {
 
 export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistProps) {
   const [search, setSearch] = useState("");
-  const [favorites, setFavorites] = useState<Set<string>>(new Set(["BBCA", "BMRI"]));
+  const [favorites, setFavorites] = useState<Set<string>>(new Set(["BBCA", "BMRI", "BBRI", "TLKM"]));
+  const [searchResults, setSearchResults] = useState<Stock[]>([]);
+  const [searching, setSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const filtered = DEFAULT_WATCHLIST.filter(
-    (s) =>
-      s.symbol.toLowerCase().includes(search.toLowerCase()) ||
-      s.name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Search IDX stocks from API when query is longer and not in local list
+  const handleSearch = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    // First filter local stocks
+    const localMatches = IDX_STOCKS.filter(
+      (s) =>
+        s.symbol.toLowerCase().includes(query.toLowerCase()) ||
+        s.name.toLowerCase().includes(query.toLowerCase())
+    );
+
+    if (localMatches.length > 0) {
+      setSearchResults(localMatches);
+      return;
+    }
+
+    // If no local match, search via API
+    setSearching(true);
+    try {
+      const result = await searchSymbol(query);
+      if (result?.data && Array.isArray(result.data)) {
+        const idxStocks = result.data
+          .filter((s: any) => s.exchange === "IDX" && s.type === "stock")
+          .map((s: any) => ({
+            symbol: s.symbol,
+            name: s.description,
+            exchange: s.exchange,
+            type: s.type,
+          }));
+        setSearchResults(idxStocks.length > 0 ? idxStocks : localMatches);
+      }
+    } catch {
+      setSearchResults(localMatches);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => handleSearch(search), 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search, handleSearch]);
+
+  const displayStocks = search.length >= 2 ? searchResults : IDX_STOCKS;
 
   const toggleFavorite = (symbol: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -48,10 +156,23 @@ export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistPr
     });
   };
 
+  // Sort: favorites first, then alphabetical
+  const sorted = [...displayStocks].sort((a, b) => {
+    const aFav = favorites.has(a.symbol) ? 0 : 1;
+    const bFav = favorites.has(b.symbol) ? 0 : 1;
+    if (aFav !== bFav) return aFav - bFav;
+    return a.symbol.localeCompare(b.symbol);
+  });
+
   return (
     <div className="flex flex-col h-full bg-card border-r border-border">
       <div className="p-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground mb-2">Watchlist</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-2">
+          Watchlist
+          <span className="text-xs text-muted-foreground font-normal ml-2">
+            {IDX_STOCKS.length} saham
+          </span>
+        </h2>
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -61,10 +182,13 @@ export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistPr
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-secondary text-foreground text-sm pl-8 pr-3 py-1.5 rounded-md border border-border focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
           />
+          {searching && (
+            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+          )}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {filtered.map((stock) => (
+        {sorted.map((stock) => (
           <div
             key={stock.symbol}
             onClick={() => onSelectStock(stock.symbol)}
@@ -90,22 +214,13 @@ export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistPr
                 <div className="text-xs text-muted-foreground truncate">{stock.name}</div>
               </div>
             </div>
-            <div className="text-right flex-shrink-0 ml-2">
-              <div className="text-sm font-mono font-semibold text-foreground">
-                {stock.price.toLocaleString()}
-              </div>
-              <div
-                className={`text-xs font-mono ${
-                  stock.change >= 0 ? "text-gain" : "text-loss"
-                }`}
-              >
-                {stock.change >= 0 ? "+" : ""}
-                {stock.change} ({stock.change >= 0 ? "+" : ""}
-                {stock.changePercent.toFixed(2)}%)
-              </div>
-            </div>
           </div>
         ))}
+        {search.length >= 2 && sorted.length === 0 && !searching && (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+            Tidak ditemukan saham "{search}"
+          </div>
+        )}
       </div>
     </div>
   );
