@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries, LineSeries } from "lightweight-charts";
+import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries, LineSeries, SeriesMarker, createSeriesMarkers, ISeriesMarkersPluginApi } from "lightweight-charts";
 import { fetchChartData } from "@/lib/api";
 import { parsePineScript, calculateIndicator, OHLCData } from "@/lib/pinescript";
+import { parseMLParams, calculateMLLogReg, MLSignal } from "@/lib/ml-logistic-regression";
 import IndicatorPanel from "@/components/IndicatorPanel";
 
 interface StockChartProps {
@@ -34,11 +35,50 @@ function generateDemoData(symbol: string, count = 200): CandlestickData<Time>[] 
   return data;
 }
 
+function signalsToMarkers(signals: MLSignal[]): SeriesMarker<Time>[] {
+  return signals.map((s) => {
+    if (s.type === "buy") {
+      return {
+        time: s.time as Time,
+        position: "belowBar" as const,
+        color: "#00BCD4",
+        shape: "arrowUp" as const,
+        text: "Buy",
+      };
+    } else if (s.type === "sell") {
+      return {
+        time: s.time as Time,
+        position: "aboveBar" as const,
+        color: "#FF0080",
+        shape: "arrowDown" as const,
+        text: "Sell",
+      };
+    } else if (s.type === "stopBuy") {
+      return {
+        time: s.time as Time,
+        position: "aboveBar" as const,
+        color: "rgba(0,188,212,0.5)",
+        shape: "circle" as const,
+        text: "×",
+      };
+    } else {
+      return {
+        time: s.time as Time,
+        position: "belowBar" as const,
+        color: "rgba(255,0,128,0.5)",
+        shape: "circle" as const,
+        text: "×",
+      };
+    }
+  });
+}
+
 export default function StockChart({ symbol }: StockChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indicatorSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const [timeframe, setTimeframe] = useState("D");
   const [loading, setLoading] = useState(false);
   const [usingDemo, setUsingDemo] = useState(false);
@@ -109,7 +149,6 @@ export default function StockChart({ symbol }: StockChartProps) {
     loadData();
   }, [symbol, timeframe]);
 
-  // Re-apply indicators when scripts change
   useEffect(() => {
     applyIndicators();
   }, [scripts]);
@@ -129,10 +168,46 @@ export default function StockChart({ symbol }: StockChartProps) {
 
     removeIndicatorSeries();
 
+    // Clear existing markers
+    if (markersPluginRef.current) {
+      markersPluginRef.current.detach();
+      markersPluginRef.current = null;
+    }
+
     const allNames: string[] = [];
     let colorIdx = 0;
+    let allMarkers: SeriesMarker<Time>[] = [];
 
     for (const script of scripts) {
+      // Check if this is an ML Logistic Regression script
+      const mlParams = parseMLParams(script);
+      if (mlParams !== null) {
+        const { indicators, signals } = calculateMLLogReg(candlesRef.current, mlParams);
+        if (indicators) {
+          allNames.push(indicators.name);
+          for (const line of indicators.lines) {
+            const lineSeries = chartInstance.current!.addSeries(LineSeries, {
+              color: line.color,
+              lineWidth: (line.lineWidth || 2) as any,
+              lineStyle: line.lineStyle,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              title: line.label,
+            });
+            lineSeries.setData(
+              line.data.map((d) => ({ time: d.time as Time, value: d.value }))
+            );
+            indicatorSeriesRef.current.push(lineSeries);
+          }
+        }
+        if (signals.length > 0) {
+          allMarkers = allMarkers.concat(signalsToMarkers(signals));
+        }
+        colorIdx++;
+        continue;
+      }
+
+      // Standard indicators
       const parsed = parsePineScript(script);
       for (const ind of parsed) {
         const result = calculateIndicator(ind, candlesRef.current, colorIdx);
@@ -155,6 +230,12 @@ export default function StockChart({ symbol }: StockChartProps) {
         }
         colorIdx++;
       }
+    }
+
+    // Apply all markers to the candlestick series
+    if (seriesRef.current && allMarkers.length > 0) {
+      allMarkers.sort((a, b) => (a.time as number) - (b.time as number));
+      markersPluginRef.current = createSeriesMarkers(seriesRef.current, allMarkers);
     }
 
     setActiveIndicatorNames(allNames);
