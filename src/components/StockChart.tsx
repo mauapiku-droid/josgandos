@@ -201,7 +201,7 @@ export default function StockChart({ symbol }: StockChartProps) {
             }
           }
         } else {
-          const { indicators, signals } = calculateML3(candlesRef.current, ml2or3.params);
+          const { indicators } = calculateML3(candlesRef.current, ml2or3.params);
           if (indicators) {
             allNames.push(indicators.name);
             for (const line of indicators.lines) {
@@ -216,15 +216,6 @@ export default function StockChart({ symbol }: StockChartProps) {
               lineSeries.setData(line.data.map((d) => ({ time: d.time as Time, value: d.value })));
               indicatorSeriesRef.current.push(lineSeries);
             }
-          }
-          if (signals.length > 0) {
-            allMarkers = allMarkers.concat(signals.map((s) => ({
-              time: s.time as Time,
-              position: s.type === "buy" ? "belowBar" as const : "aboveBar" as const,
-              color: s.type === "buy" ? "#00BCD4" : "#FF0080",
-              shape: s.type === "buy" ? "arrowUp" as const : "arrowDown" as const,
-              text: s.type === "buy" ? "Buy" : "Sell",
-            })));
           }
         }
         colorIdx++;

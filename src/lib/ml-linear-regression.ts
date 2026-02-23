@@ -209,10 +209,9 @@ export interface ML3Signal {
 
 export function calculateML3(candles: OHLCData[], params: ML3Params): {
   indicators: IndicatorResult | null;
-  signals: ML3Signal[];
 } {
   const len = candles.length;
-  if (len < params.window + 5) return { indicators: null, signals: [] };
+  if (len < params.window + 5) return { indicators: null };
 
   const closes = candles.map(c => c.close);
   const times = candles.map(c => c.time);
@@ -228,7 +227,6 @@ export function calculateML3(candles: OHLCData[], params: ML3Params): {
     const hBarsAgo = highestBars(closes, i, params.window);
     const lBarsAgo = lowestBars(closes, i, params.window);
 
-    // n - highestbars => bars since highest (hBarsAgo is already bars ago)
     const nMinusHBar = hBarsAgo > 0 ? hBarsAgo : 1;
     const nMinusLBar = lBarsAgo > 0 ? lBarsAgo : 1;
 
@@ -259,30 +257,34 @@ export function calculateML3(candles: OHLCData[], params: ML3Params): {
     }
   }
 
-  // Build signals from direction color changes
-  const signals: ML3Signal[] = [];
-  for (let i = params.window + 1; i < len; i++) {
-    if (dirColor[i] === "green" && dirColor[i - 1] !== "green") {
-      signals.push({ time: times[i], type: "buy", price: candles[i].low });
-    } else if (dirColor[i] === "red" && dirColor[i - 1] !== "red") {
-      signals.push({ time: times[i], type: "sell", price: candles[i].high });
-    }
-  }
-
   const startIdx = params.window - 1;
 
-  // Build bear, bull, and direction data for lines
   const bearData: { time: number; value: number }[] = [];
   const bullData: { time: number; value: number }[] = [];
   const dirGreenData: { time: number; value: number }[] = [];
   const dirRedData: { time: number; value: number }[] = [];
-  const dirYellowData: { time: number; value: number }[] = [];
-  const dirFullData: { time: number; value: number }[] = [];
 
   for (let i = startIdx; i < len; i++) {
     bearData.push({ time: times[i], value: bear[i] });
     bullData.push({ time: times[i], value: bull[i] });
-    dirFullData.push({ time: times[i], value: direction[i] });
+    // Split direction into green/red lines (use NaN for gaps)
+    if (dirColor[i] === "green" || dirColor[i] === "yellow") {
+      dirGreenData.push({ time: times[i], value: direction[i] });
+      dirRedData.push({ time: times[i], value: NaN });
+    } else {
+      dirRedData.push({ time: times[i], value: direction[i] });
+      dirGreenData.push({ time: times[i], value: NaN });
+    }
+  }
+
+  // Add overlap points at transitions so lines connect
+  for (let i = 1; i < dirGreenData.length; i++) {
+    if (!isNaN(dirGreenData[i].value) && isNaN(dirGreenData[i - 1].value) && !isNaN(dirRedData[i - 1].value)) {
+      dirGreenData[i - 1] = { ...dirGreenData[i - 1], value: dirRedData[i - 1].value };
+    }
+    if (!isNaN(dirRedData[i].value) && isNaN(dirRedData[i - 1].value) && !isNaN(dirGreenData[i - 1].value)) {
+      dirRedData[i - 1] = { ...dirRedData[i - 1], value: dirGreenData[i - 1].value };
+    }
   }
 
   return {
@@ -290,12 +292,12 @@ export function calculateML3(candles: OHLCData[], params: ML3Params): {
       name: "ML3 Bull Bear Power",
       type: "line",
       lines: [
-        { label: "Bear", color: "rgba(128, 0, 0, 0.3)", data: bearData, lineWidth: 1 },
-        { label: "Bull", color: "rgba(0, 128, 0, 0.3)", data: bullData, lineWidth: 1 },
-        { label: "Direction", color: "#00FF00", data: dirFullData, lineWidth: 3 },
+        { label: "Bear", color: "#FF4444", data: bearData, lineWidth: 1 },
+        { label: "Bull", color: "#44FF44", data: bullData, lineWidth: 1 },
+        { label: "Dir ▲", color: "#00FF00", data: dirGreenData, lineWidth: 3 },
+        { label: "Dir ▼", color: "#FF0055", data: dirRedData, lineWidth: 3 },
       ],
     },
-    signals,
   };
 }
 
