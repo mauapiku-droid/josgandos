@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Code2, Plus, ChevronDown, ChevronUp, Trash2, Brain } from "lucide-react";
+import { Code2, Plus, ChevronDown, ChevronUp, Trash2, Brain, TrendingUp, BarChart3 } from "lucide-react";
 import { INDICATOR_TEMPLATES } from "@/lib/pinescript";
 
 interface IndicatorPanelProps {
@@ -10,8 +10,6 @@ interface IndicatorPanelProps {
 }
 
 const ML_TEMPLATE = `// Machine Learning: Logistic Regression (v.3)
-// Paste your full PineScript here — parameters will be auto-detected
-
 lookback   = input(2, 'Lookback Window Size')
 nlbk       = input(2, 'Normalization Lookback')
 lrate      = input(0.0009, 'Learning Rate')
@@ -19,8 +17,21 @@ iterations = input(1000, 'Training Iterations')
 holding_p  = input(1, 'Holding Period')
 curves     = input(false, 'Show Loss & Prediction Curves?')
 useprice   = input(true, 'Use Price Data for Signal Generation?')
-
 logistic_regression(base, synth, lookback, lrate, iterations)`;
+
+const ML2_TEMPLATE = `// ML2: Linear Regression Line with EMA 20
+length = input(14, 'Regression Length')
+emaLength = input(20, 'EMA Length')
+Linear Regression
+ema(close, emaLength)`;
+
+const ML3_TEMPLATE = `// ML3: Improved Linear Regression Bull and Bear Power v02
+window = input(title='Lookback Window:', type=integer, defval=10)
+smooth = input(title='Smooth ?', type=bool, defval=true)
+smap = input(title='Smooth factor', type=integer, defval=5, minval=2, maxval=10)
+sigma = input(title='Sigma', type=integer, defval=6)
+f_exp_lr
+Bull and Bear Power`;
 
 export default function IndicatorPanel({
   scripts,
@@ -35,6 +46,8 @@ export default function IndicatorPanel({
   );
 
   const isMLActive = activeIndicators.includes("ML Logistic Regression");
+  const isML2Active = activeIndicators.includes("ML2 Linear Regression + EMA");
+  const isML3Active = activeIndicators.includes("ML3 Bull Bear Power");
 
   const handleAddCustom = () => {
     if (customScript.trim()) {
@@ -43,15 +56,19 @@ export default function IndicatorPanel({
     }
   };
 
-  const handleAddML = () => {
-    if (!isMLActive) {
-      onAddScript(ML_TEMPLATE);
-    }
-  };
+  const handleAddML = () => { if (!isMLActive) onAddScript(ML_TEMPLATE); };
+  const handleAddML2 = () => { if (!isML2Active) onAddScript(ML2_TEMPLATE); };
+  const handleAddML3 = () => { if (!isML3Active) onAddScript(ML3_TEMPLATE); };
 
   const getScriptPreview = (script: string): string => {
     if (script.includes("logistic_regression") || script.includes("Machine Learning") || script.includes("Logistic Regression") || script.includes("sigmoid")) {
       return "ML: Logistic Regression";
+    }
+    if (script.includes("ML2") || (script.includes("Linear Regression") && script.includes("EMA") && !script.includes("Bull"))) {
+      return "ML2: LinReg + EMA";
+    }
+    if (script.includes("ML3") || script.includes("Bull and Bear Power") || script.includes("f_exp_lr")) {
+      return "ML3: Bull Bear Power";
     }
     return script.split("\n").filter(l => l.trim() && !l.trim().startsWith("//")).join(", ").slice(0, 40);
   };
@@ -90,7 +107,7 @@ export default function IndicatorPanel({
               );
             })}
 
-            {/* ML Logistic Regression button */}
+            {/* ML buttons */}
             <button
               onClick={handleAddML}
               className={`px-2 py-0.5 text-xs rounded-full border transition-colors flex items-center gap-1 ${
@@ -100,7 +117,29 @@ export default function IndicatorPanel({
               }`}
             >
               <Brain className="w-3 h-3" />
-              ML LogReg
+              ML 1
+            </button>
+            <button
+              onClick={handleAddML2}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors flex items-center gap-1 ${
+                isML2Active
+                  ? "border-red-500/50 bg-red-500/10 text-red-400"
+                  : "border-red-500/30 text-red-400/70 hover:text-red-400 hover:border-red-500/50"
+              }`}
+            >
+              <TrendingUp className="w-3 h-3" />
+              ML 2
+            </button>
+            <button
+              onClick={handleAddML3}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors flex items-center gap-1 ${
+                isML3Active
+                  ? "border-green-500/50 bg-green-500/10 text-green-400"
+                  : "border-green-500/30 text-green-400/70 hover:text-green-400 hover:border-green-500/50"
+              }`}
+            >
+              <BarChart3 className="w-3 h-3" />
+              ML 3
             </button>
           </div>
 
@@ -167,7 +206,7 @@ export default function IndicatorPanel({
                 </button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Supported: ta.sma(), ta.ema(), ta.rsi(), ta.macd(), ta.bb(), ML Logistic Regression — atau paste langsung PineScript dari TradingView
+                Supported: ta.sma(), ta.ema(), ta.rsi(), ta.macd(), ta.bb(), ML 1 (LogReg), ML 2 (LinReg+EMA), ML 3 (Bull Bear Power) — atau paste langsung PineScript dari TradingView
               </p>
             </div>
           )}

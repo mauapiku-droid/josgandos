@@ -3,6 +3,7 @@ import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickS
 import { fetchChartData } from "@/lib/api";
 import { parsePineScript, calculateIndicator, OHLCData } from "@/lib/pinescript";
 import { parseMLParams, calculateMLLogReg, MLSignal } from "@/lib/ml-logistic-regression";
+import { parseML2or3, calculateML2, calculateML3, ML3Signal } from "@/lib/ml-linear-regression";
 import IndicatorPanel from "@/components/IndicatorPanel";
 
 interface StockChartProps {
@@ -179,6 +180,57 @@ export default function StockChart({ symbol }: StockChartProps) {
     let allMarkers: SeriesMarker<Time>[] = [];
 
     for (const script of scripts) {
+      // Check ML2 / ML3
+      const ml2or3 = parseML2or3(script);
+      if (ml2or3) {
+        if (ml2or3.type === "ml2") {
+          const result = calculateML2(candlesRef.current, ml2or3.params);
+          if (result) {
+            allNames.push(result.name);
+            for (const line of result.lines) {
+              const lineSeries = chartInstance.current!.addSeries(LineSeries, {
+                color: line.color,
+                lineWidth: (line.lineWidth || 2) as any,
+                lineStyle: line.lineStyle,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: line.label,
+              });
+              lineSeries.setData(line.data.map((d) => ({ time: d.time as Time, value: d.value })));
+              indicatorSeriesRef.current.push(lineSeries);
+            }
+          }
+        } else {
+          const { indicators, signals } = calculateML3(candlesRef.current, ml2or3.params);
+          if (indicators) {
+            allNames.push(indicators.name);
+            for (const line of indicators.lines) {
+              const lineSeries = chartInstance.current!.addSeries(LineSeries, {
+                color: line.color,
+                lineWidth: (line.lineWidth || 2) as any,
+                lineStyle: line.lineStyle,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: line.label,
+              });
+              lineSeries.setData(line.data.map((d) => ({ time: d.time as Time, value: d.value })));
+              indicatorSeriesRef.current.push(lineSeries);
+            }
+          }
+          if (signals.length > 0) {
+            allMarkers = allMarkers.concat(signals.map((s) => ({
+              time: s.time as Time,
+              position: s.type === "buy" ? "belowBar" as const : "aboveBar" as const,
+              color: s.type === "buy" ? "#00BCD4" : "#FF0080",
+              shape: s.type === "buy" ? "arrowUp" as const : "arrowDown" as const,
+              text: s.type === "buy" ? "Buy" : "Sell",
+            })));
+          }
+        }
+        colorIdx++;
+        continue;
+      }
+
       // Check if this is an ML Logistic Regression script
       const mlParams = parseMLParams(script);
       if (mlParams !== null) {
@@ -194,9 +246,7 @@ export default function StockChart({ symbol }: StockChartProps) {
               lastValueVisible: true,
               title: line.label,
             });
-            lineSeries.setData(
-              line.data.map((d) => ({ time: d.time as Time, value: d.value }))
-            );
+            lineSeries.setData(line.data.map((d) => ({ time: d.time as Time, value: d.value })));
             indicatorSeriesRef.current.push(lineSeries);
           }
         }
@@ -223,9 +273,7 @@ export default function StockChart({ symbol }: StockChartProps) {
             lastValueVisible: true,
             title: line.label,
           });
-          lineSeries.setData(
-            line.data.map((d) => ({ time: d.time as Time, value: d.value }))
-          );
+          lineSeries.setData(line.data.map((d) => ({ time: d.time as Time, value: d.value })));
           indicatorSeriesRef.current.push(lineSeries);
         }
         colorIdx++;
