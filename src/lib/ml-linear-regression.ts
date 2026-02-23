@@ -267,23 +267,22 @@ export function calculateML3(candles: OHLCData[], params: ML3Params): {
   for (let i = startIdx; i < len; i++) {
     bearData.push({ time: times[i], value: bear[i] });
     bullData.push({ time: times[i], value: bull[i] });
-    // Split direction into green/red lines (use NaN for gaps)
-    if (dirColor[i] === "green" || dirColor[i] === "yellow") {
-      dirGreenData.push({ time: times[i], value: direction[i] });
-      dirRedData.push({ time: times[i], value: NaN });
-    } else {
-      dirRedData.push({ time: times[i], value: direction[i] });
-      dirGreenData.push({ time: times[i], value: NaN });
-    }
-  }
 
-  // Add overlap points at transitions so lines connect
-  for (let i = 1; i < dirGreenData.length; i++) {
-    if (!isNaN(dirGreenData[i].value) && isNaN(dirGreenData[i - 1].value) && !isNaN(dirRedData[i - 1].value)) {
-      dirGreenData[i - 1] = { ...dirGreenData[i - 1], value: dirRedData[i - 1].value };
-    }
-    if (!isNaN(dirRedData[i].value) && isNaN(dirRedData[i - 1].value) && !isNaN(dirGreenData[i - 1].value)) {
-      dirRedData[i - 1] = { ...dirRedData[i - 1], value: dirGreenData[i - 1].value };
+    const isGreen = dirColor[i] === "green" || dirColor[i] === "yellow";
+    const prevIsGreen = i > startIdx && (dirColor[i - 1] === "green" || dirColor[i - 1] === "yellow");
+
+    if (isGreen) {
+      // Add overlap point at transition from red to green
+      if (i > startIdx && !prevIsGreen) {
+        dirGreenData.push({ time: times[i - 1], value: direction[i - 1] });
+      }
+      dirGreenData.push({ time: times[i], value: direction[i] });
+    } else {
+      // Add overlap point at transition from green to red
+      if (i > startIdx && prevIsGreen) {
+        dirRedData.push({ time: times[i - 1], value: direction[i - 1] });
+      }
+      dirRedData.push({ time: times[i], value: direction[i] });
     }
   }
 
