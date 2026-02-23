@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Send } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
   role: "user" | "assistant";
@@ -16,21 +17,32 @@ export default function AIAssistant() {
 
     const userMsg: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg]);
+    const userInput = input;
     setInput("");
     setLoading(true);
 
-    // Placeholder response
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-chat", {
+        body: { message: userInput },
+      });
+
+      if (error) throw error;
+
+      const reply = data?.data?.reply_text || data?.reply || data?.message || JSON.stringify(data);
+
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            "Fitur AI Assistant akan segera tersedia. Kamu bisa menanyakan analisis teknikal, fundamental, atau apapun tentang saham Indonesia.",
-        },
+        { role: "assistant", content: reply },
       ]);
+    } catch (err: any) {
+      console.error("AI chat error:", err);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Maaf, terjadi kesalahan. Coba lagi nanti." },
+      ]);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
