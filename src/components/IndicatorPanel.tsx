@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Code2, Plus, X, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Code2, Plus, ChevronDown, ChevronUp, Trash2, Brain } from "lucide-react";
 import { INDICATOR_TEMPLATES } from "@/lib/pinescript";
 
 interface IndicatorPanelProps {
@@ -8,6 +8,19 @@ interface IndicatorPanelProps {
   onRemoveScript: (index: number) => void;
   activeIndicators: string[];
 }
+
+const ML_TEMPLATE = `// Machine Learning: Logistic Regression (v.3)
+// Paste your full PineScript here — parameters will be auto-detected
+
+lookback   = input(2, 'Lookback Window Size')
+nlbk       = input(2, 'Normalization Lookback')
+lrate      = input(0.0009, 'Learning Rate')
+iterations = input(1000, 'Training Iterations')
+holding_p  = input(1, 'Holding Period')
+curves     = input(false, 'Show Loss & Prediction Curves?')
+useprice   = input(true, 'Use Price Data for Signal Generation?')
+
+logistic_regression(base, synth, lookback, lrate, iterations)`;
 
 export default function IndicatorPanel({
   scripts,
@@ -21,11 +34,26 @@ export default function IndicatorPanel({
     `// Contoh PineScript Indicator\n// Anda bisa paste script dari TradingView\n\n// Moving Averages\nta.sma(close, 20)\nta.ema(close, 50)\n\n// RSI\n// ta.rsi(close, 14)\n\n// MACD\n// ta.macd(close, 12, 26, 9)\n\n// Bollinger Bands\n// ta.bb(close, 20, 2)`
   );
 
+  const isMLActive = activeIndicators.includes("ML Logistic Regression");
+
   const handleAddCustom = () => {
     if (customScript.trim()) {
       onAddScript(customScript);
       setShowEditor(false);
     }
+  };
+
+  const handleAddML = () => {
+    if (!isMLActive) {
+      onAddScript(ML_TEMPLATE);
+    }
+  };
+
+  const getScriptPreview = (script: string): string => {
+    if (script.includes("logistic_regression") || script.includes("Machine Learning") || script.includes("Logistic Regression") || script.includes("sigmoid")) {
+      return "ML: Logistic Regression";
+    }
+    return script.split("\n").filter(l => l.trim() && !l.trim().startsWith("//")).join(", ").slice(0, 40);
   };
 
   return (
@@ -61,27 +89,49 @@ export default function IndicatorPanel({
                 </button>
               );
             })}
+
+            {/* ML Logistic Regression button */}
+            <button
+              onClick={handleAddML}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors flex items-center gap-1 ${
+                isMLActive
+                  ? "border-purple-500/50 bg-purple-500/10 text-purple-400"
+                  : "border-purple-500/30 text-purple-400/70 hover:text-purple-400 hover:border-purple-500/50"
+              }`}
+            >
+              <Brain className="w-3 h-3" />
+              ML LogReg
+            </button>
           </div>
 
           {/* Active indicators */}
           {scripts.length > 0 && (
             <div className="space-y-1">
-              {scripts.map((script, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between bg-secondary rounded px-2 py-1"
-                >
-                  <span className="text-xs text-secondary-foreground font-mono truncate flex-1">
-                    {script.split("\n").filter(l => l.trim() && !l.trim().startsWith("//")).join(", ").slice(0, 40)}
-                  </span>
-                  <button
-                    onClick={() => onRemoveScript(i)}
-                    className="text-muted-foreground hover:text-loss ml-1 flex-shrink-0"
+              {scripts.map((script, i) => {
+                const preview = getScriptPreview(script);
+                const isML = preview.includes("ML:");
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center justify-between rounded px-2 py-1 ${
+                      isML ? "bg-purple-500/10 border border-purple-500/20" : "bg-secondary"
+                    }`}
                   >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+                    <span className={`text-xs font-mono truncate flex-1 ${
+                      isML ? "text-purple-300" : "text-secondary-foreground"
+                    }`}>
+                      {isML && <Brain className="w-3 h-3 inline mr-1" />}
+                      {preview}
+                    </span>
+                    <button
+                      onClick={() => onRemoveScript(i)}
+                      className="text-muted-foreground hover:text-destructive ml-1 flex-shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -117,7 +167,7 @@ export default function IndicatorPanel({
                 </button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Supported: ta.sma(), ta.ema(), ta.rsi(), ta.macd(), ta.bb() — atau shorthand: SMA 20, EMA 50
+                Supported: ta.sma(), ta.ema(), ta.rsi(), ta.macd(), ta.bb(), ML Logistic Regression — atau paste langsung PineScript dari TradingView
               </p>
             </div>
           )}
