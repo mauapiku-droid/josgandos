@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { IDX_STOCKS } from "@/lib/idx-stocks";
 
 interface TickerItem {
   symbol: string;
@@ -7,18 +8,35 @@ interface TickerItem {
   changePercent: number;
 }
 
-const TICKER_DATA: TickerItem[] = [
-  { symbol: "IHSG", price: 7288, change: -0.29, changePercent: -0.29 },
-  { symbol: "BBCA", price: 9875, change: 0.77, changePercent: 0.77 },
-  { symbol: "ADRO", price: 2700, change: -0.74, changePercent: -0.74 },
-  { symbol: "PTBA", price: 2970, change: 0.68, changePercent: 0.68 },
-  { symbol: "TLKM", price: 3420, change: 0.59, changePercent: 0.59 },
-  { symbol: "BMRI", price: 6350, change: 1.60, changePercent: 1.60 },
-  { symbol: "GOTO", price: 74, change: 2.78, changePercent: 2.78 },
-  { symbol: "BBRI", price: 4650, change: -0.64, changePercent: -0.64 },
-  { symbol: "ASII", price: 5225, change: -0.95, changePercent: -0.95 },
-  { symbol: "UNVR", price: 3180, change: -0.47, changePercent: -0.47 },
-];
+// Generate realistic ticker data from the full IDX stock list
+function generateTickerData(): TickerItem[] {
+  const basePrices: Record<string, number> = {
+    BBCA: 9875, BBRI: 4650, BMRI: 6350, BBNI: 5200, TLKM: 3420,
+    ASII: 5225, UNVR: 3180, GOTO: 74, BREN: 6900, ADRO: 2700,
+    ANTM: 1530, PTBA: 2970, HMSP: 820, GGRM: 26500, ICBP: 11200,
+    INDF: 6700, KLBF: 1565, PGAS: 1350, SMGR: 4100, AMMN: 8200,
+    MDKA: 2500, ITMG: 27800, HRUM: 1400, MEDC: 1200, MBMA: 560,
+    BRIS: 2700, ARTO: 2450, EMTK: 490, CPIN: 5100, MNCN: 720,
+    JPFA: 1500, INKP: 9200, TKIM: 6800, INCO: 4500, ESSA: 800,
+    BRPT: 1100, TBIG: 2200, TOWR: 1050, EXCL: 2400, ISAT: 8100,
+    BSDE: 1100, CTRA: 1200, SMRA: 700, PWON: 480, ERAA: 510,
+    ACES: 740, MAPI: 1700, LPPF: 3200, SIDO: 750, MYOR: 2600,
+    UNTR: 26500, AALI: 6200, AKRA: 1400, JSMR: 4500, WIKA: 680,
+  };
+
+  return IDX_STOCKS.slice(0, 50).map((stock) => {
+    const base = basePrices[stock.symbol] || Math.floor(Math.random() * 5000) + 100;
+    const changePct = (Math.random() - 0.5) * 6;
+    return {
+      symbol: stock.symbol,
+      price: Math.round(base * (1 + changePct / 100)),
+      change: changePct,
+      changePercent: Number(changePct.toFixed(2)),
+    };
+  });
+}
+
+const TICKER_DATA: TickerItem[] = generateTickerData();
 
 export default function TickerBar() {
   const [offset, setOffset] = useState(0);
