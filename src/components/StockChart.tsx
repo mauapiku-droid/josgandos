@@ -86,6 +86,9 @@ export default function StockChart({ symbol }: StockChartProps) {
   const [scripts, setScripts] = useState<string[]>([]);
   const [activeIndicatorNames, setActiveIndicatorNames] = useState<string[]>([]);
   const candlesRef = useRef<OHLCData[]>([]);
+  const [hoverData, setHoverData] = useState<{
+    open: number; high: number; low: number; close: number; volume?: number; time: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -126,6 +129,34 @@ export default function StockChart({ symbol }: StockChartProps) {
 
     chartInstance.current = chart;
     seriesRef.current = series;
+
+    // Crosshair move handler for OHLCV display
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.seriesData) {
+        setHoverData(null);
+        return;
+      }
+      const data = param.seriesData.get(series) as any;
+      if (data && data.open !== undefined) {
+        // Find matching candle for volume
+        const timeVal = param.time as number;
+        const candle = candlesRef.current.find((c) => c.time === timeVal);
+        const date = new Date(timeVal * 1000);
+        const timeStr = date.toLocaleDateString("id-ID", {
+          day: "2-digit", month: "short", year: "numeric",
+        });
+        setHoverData({
+          open: data.open,
+          high: data.high,
+          low: data.low,
+          close: data.close,
+          volume: candle?.volume,
+          time: timeStr,
+        });
+      } else {
+        setHoverData(null);
+      }
+    });
 
     const handleResize = () => {
       if (chartRef.current) {
@@ -393,7 +424,21 @@ export default function StockChart({ symbol }: StockChartProps) {
         onRemoveScript={handleRemoveScript}
         activeIndicators={activeIndicatorNames}
       />
-      <div ref={chartRef} className="flex-1" />
+      <div className="relative flex-1">
+        {hoverData && (
+          <div className="absolute top-2 left-3 z-10 flex items-center gap-3 text-xs font-mono pointer-events-none">
+            <span className="text-muted-foreground">{hoverData.time}</span>
+            <span className="text-muted-foreground">O: <span className={hoverData.close >= hoverData.open ? "text-gain" : "text-loss"}>{hoverData.open.toLocaleString()}</span></span>
+            <span className="text-muted-foreground">H: <span className="text-gain">{hoverData.high.toLocaleString()}</span></span>
+            <span className="text-muted-foreground">L: <span className="text-loss">{hoverData.low.toLocaleString()}</span></span>
+            <span className="text-muted-foreground">C: <span className={hoverData.close >= hoverData.open ? "text-gain" : "text-loss"}>{hoverData.close.toLocaleString()}</span></span>
+            {hoverData.volume !== undefined && (
+              <span className="text-muted-foreground">Vol: <span className="text-foreground">{hoverData.volume.toLocaleString()}</span></span>
+            )}
+          </div>
+        )}
+        <div ref={chartRef} className="w-full h-full" />
+      </div>
     </div>
   );
 }

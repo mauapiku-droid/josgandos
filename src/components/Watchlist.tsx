@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Star, Search, Loader2 } from "lucide-react";
+import { Star, Search, Loader2, Plus, X } from "lucide-react";
 import { searchSymbol } from "@/lib/api";
 import { IDX_STOCKS, Stock } from "@/lib/idx-stocks";
 
@@ -10,31 +10,31 @@ interface WatchlistProps {
 
 export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistProps) {
   const [search, setSearch] = useState("");
-  const [favorites, setFavorites] = useState<Set<string>>(new Set(["BBCA", "BMRI", "BBRI", "TLKM"]));
+  const [watchlist, setWatchlist] = useState<Stock[]>([
+    { symbol: "BBCA", name: "Bank Central Asia", exchange: "IDX", type: "stock" },
+  ]);
   const [searchResults, setSearchResults] = useState<Stock[]>([]);
   const [searching, setSearching] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Search IDX stocks from API when query is longer and not in local list
   const handleSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSearchResults([]);
       return;
     }
 
-    // First filter local stocks
     const localMatches = IDX_STOCKS.filter(
       (s) =>
         s.symbol.toLowerCase().includes(query.toLowerCase()) ||
         s.name.toLowerCase().includes(query.toLowerCase())
-    );
+    ).slice(0, 20);
 
     if (localMatches.length > 0) {
       setSearchResults(localMatches);
       return;
     }
 
-    // If no local match, search via API
     setSearching(true);
     try {
       const result = await searchSymbol(query);
@@ -47,10 +47,10 @@ export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistPr
             exchange: s.exchange,
             type: s.type,
           }));
-        setSearchResults(idxStocks.length > 0 ? idxStocks : localMatches);
+        setSearchResults(idxStocks.length > 0 ? idxStocks : []);
       }
     } catch {
-      setSearchResults(localMatches);
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -64,81 +64,120 @@ export default function Watchlist({ onSelectStock, selectedSymbol }: WatchlistPr
     };
   }, [search, handleSearch]);
 
-  const displayStocks = search.length >= 2 ? searchResults : IDX_STOCKS;
-
-  const toggleFavorite = (symbol: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      next.has(symbol) ? next.delete(symbol) : next.add(symbol);
-      return next;
-    });
+  const addToWatchlist = (stock: Stock) => {
+    if (!watchlist.find((s) => s.symbol === stock.symbol)) {
+      setWatchlist((prev) => [...prev, stock]);
+    }
+    setSearch("");
+    setIsSearchMode(false);
+    setSearchResults([]);
+    onSelectStock(stock.symbol);
   };
 
-  // Sort: favorites first, then alphabetical
-  const sorted = [...displayStocks].sort((a, b) => {
-    const aFav = favorites.has(a.symbol) ? 0 : 1;
-    const bFav = favorites.has(b.symbol) ? 0 : 1;
-    if (aFav !== bFav) return aFav - bFav;
-    return a.symbol.localeCompare(b.symbol);
-  });
+  const removeFromWatchlist = (symbol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setWatchlist((prev) => prev.filter((s) => s.symbol !== symbol));
+  };
+
+  const isInWatchlist = (symbol: string) => watchlist.some((s) => s.symbol === symbol);
 
   return (
     <div className="flex flex-col h-full bg-card border-r border-border">
       <div className="p-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground mb-2">
-          Watchlist
-          <span className="text-xs text-muted-foreground font-normal ml-2">
-            {IDX_STOCKS.length} saham
-          </span>
-        </h2>
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Cari saham..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-secondary text-foreground text-sm pl-8 pr-3 py-1.5 rounded-md border border-border focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
-          />
-          {searching && (
-            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
-          )}
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {sorted.map((stock) => (
-          <div
-            key={stock.symbol}
-            onClick={() => onSelectStock(stock.symbol)}
-            className={`flex items-center justify-between px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent transition-colors ${
-              selectedSymbol === stock.symbol ? "bg-accent" : ""
-            }`}
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold text-foreground">
+            Watchlist
+            <span className="text-xs text-muted-foreground font-normal ml-2">
+              {watchlist.length}
+            </span>
+          </h2>
+          <button
+            onClick={() => setIsSearchMode(!isSearchMode)}
+            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            title="Tambah saham"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <button
-                onClick={(e) => toggleFavorite(stock.symbol, e)}
-                className="flex-shrink-0"
+            {isSearchMode ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </button>
+        </div>
+        {isSearchMode && (
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Cari saham untuk ditambah..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+              className="w-full bg-secondary text-foreground text-sm pl-8 pr-3 py-1.5 rounded-md border border-border focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
+            />
+            {searching && (
+              <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* Search results */}
+        {isSearchMode && search.length >= 2 && searchResults.length > 0 && (
+          <div className="border-b border-border">
+            <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary/50">Hasil pencarian</div>
+            {searchResults.map((stock) => (
+              <div
+                key={stock.symbol}
+                onClick={() => addToWatchlist(stock)}
+                className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-border/30 hover:bg-accent transition-colors"
               >
-                <Star
-                  className={`w-3.5 h-3.5 ${
-                    favorites.has(stock.symbol)
-                      ? "fill-warning text-warning"
-                      : "text-muted-foreground"
-                  }`}
-                />
-              </button>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-foreground">{stock.symbol}</div>
-                <div className="text-xs text-muted-foreground truncate">{stock.name}</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground">{stock.symbol}</div>
+                  <div className="text-xs text-muted-foreground truncate">{stock.name}</div>
+                </div>
+                {isInWatchlist(stock.symbol) ? (
+                  <span className="text-xs text-muted-foreground">✓</span>
+                ) : (
+                  <Plus className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                )}
               </div>
-            </div>
+            ))}
           </div>
-        ))}
-        {search.length >= 2 && sorted.length === 0 && !searching && (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            Tidak ditemukan saham "{search}"
+        )}
+
+        {isSearchMode && search.length >= 2 && searchResults.length === 0 && !searching && (
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+            Tidak ditemukan "{search}"
           </div>
+        )}
+
+        {/* Watchlist items */}
+        {(!isSearchMode || search.length < 2) && (
+          <>
+            {watchlist.map((stock) => (
+              <div
+                key={stock.symbol}
+                onClick={() => onSelectStock(stock.symbol)}
+                className={`flex items-center justify-between px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent transition-colors ${
+                  selectedSymbol === stock.symbol ? "bg-accent" : ""
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground">{stock.symbol}</div>
+                  <div className="text-xs text-muted-foreground truncate">{stock.name}</div>
+                </div>
+                <button
+                  onClick={(e) => removeFromWatchlist(stock.symbol, e)}
+                  className="flex-shrink-0 p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                  title="Hapus dari watchlist"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            {watchlist.length === 0 && (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Watchlist kosong. Klik + untuk menambah saham.
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
